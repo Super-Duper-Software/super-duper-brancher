@@ -1,11 +1,9 @@
 use clap::{Args, Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
-use serde_json::map::IntoIter;
 use std::env;
 use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
-use std::process::Output;
 use std::{
     collections::HashMap,
     fs,
@@ -18,6 +16,7 @@ use std::{
 #[derive(Serialize, Deserialize)]
 struct Branch {
     parent_name: String,
+    fork_point: String,
     created_at: u64,
 }
 
@@ -125,7 +124,7 @@ fn init() {
 fn status() {
     let state = read_state().expect("Error reading state");
     for (key, value) in &state.branches {
-        let is_merged = is_merged(key, value.parent_name.as_str());
+        let is_merged = is_merged(key, value.parent_name.as_str(), value.fork_point.as_str());
         println!(
             "is {} merged into {}: {:?}",
             key, value.parent_name, is_merged
@@ -151,10 +150,15 @@ where
 enum MergedStatus {
     Merged,
     NotMerged,
+    NoCommits,
     DunnoBro,
 }
 
-fn is_merged(branch: &str, parent: &str) -> MergedStatus {
+fn is_merged(branch: &str, parent: &str, fork_point: &str) -> MergedStatus {
+    let (tip, _) = run_git(["rev-parse", branch]);
+    if tip.trim() == fork_point {
+        return MergedStatus::NoCommits;
+    }
     let (_, status) = run_git(["merge-base", "--is-ancestor", branch, parent]);
 
     match status {
@@ -219,8 +223,11 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
 
     let now = get_epoch_secs();
 
+    let (fork_point, _) = run_git(["rev-parse", "HEAD"]);
+
     let current_branch = Branch {
         created_at: now,
+        fork_point: String::from(fork_point.trim()),
         parent_name: String::from(previous_branch_name_string.trim()),
     };
 
