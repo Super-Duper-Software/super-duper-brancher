@@ -27,7 +27,7 @@ struct State {
 fn read_state() -> Result<State> {
     let state_file = match fs::read_to_string(".git/sdb-state.json") {
         Ok(file_string) => file_string,
-        Err(error) => {
+        Err(_error) => {
             return Ok(State {
                 branches: HashMap::new(),
                 installed_at: 0,
@@ -123,7 +123,7 @@ fn status() {
     println!("You invoked the status command!");
 }
 
-fn hook_post_checkout(prev: &str, new: &str, is_branch_checkout: &i32) {
+fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
     if *is_branch_checkout == 0 {
         return;
     }
