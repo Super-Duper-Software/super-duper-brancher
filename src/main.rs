@@ -113,6 +113,12 @@ fn init() {
 
 fn status() {
     let state = read_state().expect("Error reading state");
+
+    if state.branches.len() == 0 {
+        println!("No branches yet!");
+        return;
+    }
+
     for (key, value) in &state.branches {
         let is_merged = is_merged(key, value.parent_name.as_str(), value.fork_point.as_str());
         println!(
