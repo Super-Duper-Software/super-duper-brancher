@@ -1,7 +1,47 @@
 use clap::{Args, Parser, Subcommand};
+use serde::{Deserialize, Serialize};
+use serde_json::Result;
+use std::env;
 use std::os::unix::fs::PermissionsExt;
-use std::{env, fs};
+use std::{
+    collections::HashMap,
+    fs,
+    process::Command,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
+// Branch state
+
+#[derive(Serialize, Deserialize)]
+struct Branch {
+    parent_name: String,
+    created_at: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct State {
+    branches: HashMap<String, Branch>,
+}
+
+fn read_state() -> Result<State> {
+    let state_file = match fs::read_to_string(".git/sdb-state.json") {
+        Ok(file_string) => file_string,
+        Err(error) => {
+            return Ok(State {
+                branches: HashMap::new(),
+            });
+        }
+    };
+    serde_json::from_str(&state_file)
+}
+
+fn write_state(state: &State) {
+    let state_string = serde_json::to_string_pretty(state)
+        .expect("Error converting in-memory state to pretty string");
+    fs::write(".git/sdb-state.json", state_string).expect("Error writing in-memory state to file")
+}
+
+// CLI
 #[derive(Parser)]
 #[command(name = "SuperDuperBrancher")]
 #[command(version = "1.0")]
@@ -71,10 +111,66 @@ fn status() {
 }
 
 fn hook_post_checkout(prev: &str, new: &str, is_branch_checkout: &i32) {
-    println!(
-        "hook post checkout. prev: {}, new: {}, is_branch_checkout: {}",
-        prev, new, is_branch_checkout
+    if *is_branch_checkout == 0 {
+        return;
+    }
+
+    let current_branch_name = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .expect("Failed to execute rev-parse");
+
+    let current_branch_name_string =
+        String::from_utf8(current_branch_name.stdout).expect("Error getting string from output");
+
+    let mut state = read_state().expect("Error reading state");
+    if state.branches.contains_key(&current_branch_name_string) {
+        return;
+    }
+
+    let commit_count = Command::new("git")
+        .args([
+            "rev-list",
+            "--walk-reflogs",
+            "--count",
+            current_branch_name_string.trim(),
+        ])
+        .output()
+        .expect("failed to get commit count");
+    let commit_count: String =
+        String::from_utf8(commit_count.stdout).expect("Failed to parse output");
+    let commit_count: u32 = commit_count
+        .trim()
+        .parse()
+        .expect("Commit count could not be parsed as a u32");
+
+    if commit_count > 1 {
+        return;
+    }
+
+    let previous_branch_name = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "@{-1}"])
+        .output()
+        .expect("Failed to execute rev-parse");
+
+    let previous_branch_name_string =
+        String::from_utf8(previous_branch_name.stdout).expect("Error getting string from output");
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Clock before epoch");
+
+    let current_branch = Branch {
+        created_at: now.as_secs(),
+        parent_name: String::from(previous_branch_name_string.trim()),
+    };
+
+    state.branches.insert(
+        String::from(current_branch_name_string.trim()),
+        current_branch,
     );
+
+    write_state(&state);
 }
 
 fn hook_post_merge(is_squash: &i32) {
