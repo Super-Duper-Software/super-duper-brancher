@@ -153,7 +153,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
             current_branch_name_string.trim(),
         ])
         .output()
-        .expect("failed to get commit count");
+        .expect("failed to get list of reflog timestamps");
     let reflog_time_output: String =
         String::from_utf8(reflog_time_output.stdout).expect("Failed to parse output");
     let last_reflog_time = reflog_time_output.lines().last();
@@ -184,6 +184,10 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
 
     let previous_branch_name_string =
         String::from_utf8(previous_branch_name.stdout).expect("Error getting string from output");
+
+    if previous_branch_name_string.is_empty() {
+        return;
+    }
 
     let now = get_epoch_secs();
 
