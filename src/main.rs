@@ -185,7 +185,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
     let previous_branch_name_string =
         String::from_utf8(previous_branch_name.stdout).expect("Error getting string from output");
 
-    if previous_branch_name_string.is_empty() {
+    if previous_branch_name_string.trim().is_empty() {
         return;
     }
 
