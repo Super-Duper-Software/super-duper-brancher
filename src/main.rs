@@ -21,6 +21,7 @@ struct Branch {
 #[derive(Serialize, Deserialize)]
 struct State {
     branches: HashMap<String, Branch>,
+    installed_at: u64,
 }
 
 fn read_state() -> Result<State> {
@@ -29,6 +30,7 @@ fn read_state() -> Result<State> {
         Err(error) => {
             return Ok(State {
                 branches: HashMap::new(),
+                installed_at: 0,
             });
         }
     };
@@ -96,6 +98,13 @@ fn write_and_set_perms(path: &str, script: &String) {
     println!("Wrote script to {}", path);
 }
 
+fn get_epoch_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Clock before epoch")
+        .as_secs()
+}
+
 fn init() {
     let post_checkout_script = get_script("hook-post-checkout");
     let post_merge_script = get_script("hook-post-merge");
@@ -104,6 +113,10 @@ fn init() {
     // and maybe allow for a --force flag that will overwrite
     write_and_set_perms(".git/hooks/post-checkout", &post_checkout_script);
     write_and_set_perms(".git/hooks/post-merge", &post_merge_script);
+
+    let mut state = read_state().expect("Could not read state");
+    state.installed_at = get_epoch_secs();
+    write_state(&state);
 }
 
 fn status() {
@@ -131,24 +144,37 @@ fn hook_post_checkout(prev: &str, new: &str, is_branch_checkout: &i32) {
         return;
     }
 
-    let commit_count = Command::new("git")
+    let reflog_time_output = Command::new("git")
         .args([
-            "rev-list",
-            "--walk-reflogs",
-            "--count",
+            "log",
+            "-g",
+            "--format=%gd",
+            "--date=unix",
             current_branch_name_string.trim(),
         ])
         .output()
         .expect("failed to get commit count");
-    let commit_count: String =
-        String::from_utf8(commit_count.stdout).expect("Failed to parse output");
-    let commit_count: u32 = commit_count
-        .trim()
-        .parse()
-        .expect("Commit count could not be parsed as a u32");
+    let reflog_time_output: String =
+        String::from_utf8(reflog_time_output.stdout).expect("Failed to parse output");
+    let last_reflog_time = reflog_time_output.lines().last();
+    if let Some(last_reflog) = last_reflog_time {
+        let last_reflog = last_reflog
+            .trim()
+            .split_once('{')
+            .expect("could not split")
+            .1;
+        let last_reflog_digits = last_reflog.split_once('}').expect("could not split").0;
 
-    if commit_count > 1 {
-        return;
+        let last_reflog_digits: u64 = last_reflog_digits
+            .trim()
+            .parse()
+            .expect("Could not convert reflog to timestamp");
+
+        if last_reflog_digits < state.installed_at {
+            return;
+        }
+    } else {
+        panic!("Could not parse last reflog time")
     }
 
     let previous_branch_name = Command::new("git")
@@ -159,12 +185,10 @@ fn hook_post_checkout(prev: &str, new: &str, is_branch_checkout: &i32) {
     let previous_branch_name_string =
         String::from_utf8(previous_branch_name.stdout).expect("Error getting string from output");
 
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Clock before epoch");
+    let now = get_epoch_secs();
 
     let current_branch = Branch {
-        created_at: now.as_secs(),
+        created_at: now,
         parent_name: String::from(previous_branch_name_string.trim()),
     };
 
