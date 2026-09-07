@@ -10,6 +10,7 @@ use std::{
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
+use tabled::{Table, Tabled};
 
 // Branch state
 
@@ -111,6 +112,13 @@ fn init() {
     write_state(&state);
 }
 
+#[derive(Tabled)]
+struct StatusTable {
+    branch: String,
+    parent: String,
+    is_merged: String,
+}
+
 fn status() {
     let state = read_state().expect("Error reading state");
 
@@ -122,15 +130,21 @@ fn status() {
     let mut branches_vec: Vec<(String, Branch)> = state.branches.into_iter().collect();
     branches_vec.sort_by(|a, b| a.0.cmp(&b.0));
 
-    for (key, value) in &branches_vec {
-        let is_merged = is_merged(key, value.parent_name.as_str(), value.fork_point.as_str());
-        println!(
-            "is {} merged into {}: {:?}",
-            key,
-            value.parent_name,
-            is_merged.label()
-        );
+    let mut branches_table: Vec<StatusTable> = Vec::new();
+
+    for (key, value) in branches_vec {
+        let is_merged = is_merged(&key, value.parent_name.as_str(), value.fork_point.as_str());
+        let merged_label = is_merged.label();
+        let parent_name = value.parent_name;
+        branches_table.push(StatusTable {
+            branch: String::from(key),
+            parent: parent_name,
+            is_merged: String::from(merged_label),
+        });
     }
+
+    let table = Table::new(branches_table);
+    println!("{}", table);
 }
 
 fn run_git<I, S>(commands: I) -> (String, Option<i32>)
