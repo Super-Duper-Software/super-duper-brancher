@@ -1,7 +1,9 @@
 use clap::{Args, Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
+use serde_json::map::IntoIter;
 use std::env;
+use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
 use std::{
     collections::HashMap,
@@ -123,18 +125,24 @@ fn status() {
     println!("You invoked the status command!");
 }
 
+fn run_git<I, S>(commands: I) -> String
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let output = Command::new("git")
+        .args(commands)
+        .output()
+        .expect("Failed to run git command");
+    String::from_utf8(output.stdout).expect("Error getting string from git output")
+}
+
 fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
     if *is_branch_checkout == 0 {
         return;
     }
 
-    let current_branch_name = Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .expect("Failed to execute rev-parse");
-
-    let current_branch_name_string =
-        String::from_utf8(current_branch_name.stdout).expect("Error getting string from output");
+    let current_branch_name_string = run_git(["rev-parse", "--abbrev-ref", "HEAD"]);
 
     let mut state = read_state().expect("Error reading state");
     if state
@@ -144,18 +152,13 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
         return;
     }
 
-    let reflog_time_output = Command::new("git")
-        .args([
-            "log",
-            "-g",
-            "--format=%gd",
-            "--date=unix",
-            current_branch_name_string.trim(),
-        ])
-        .output()
-        .expect("failed to get list of reflog timestamps");
-    let reflog_time_output: String =
-        String::from_utf8(reflog_time_output.stdout).expect("Failed to parse output");
+    let reflog_time_output: String = run_git([
+        "log",
+        "-g",
+        "--format=%gd",
+        "--date=unix",
+        current_branch_name_string.trim(),
+    ]);
     let last_reflog_time = reflog_time_output.lines().last();
     if let Some(last_reflog) = last_reflog_time {
         let last_reflog = last_reflog
@@ -177,13 +180,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
         panic!("Could not parse last reflog time")
     }
 
-    let previous_branch_name = Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "@{-1}"])
-        .output()
-        .expect("Failed to execute rev-parse");
-
-    let previous_branch_name_string =
-        String::from_utf8(previous_branch_name.stdout).expect("Error getting string from output");
+    let previous_branch_name_string = run_git(["rev-parse", "--abbrev-ref", "@{-1}"]);
 
     if previous_branch_name_string.trim().is_empty() {
         return;
