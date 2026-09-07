@@ -1,57 +1,61 @@
-use std::{collections::HashMap, fs, process::Command, time::{SystemTime, UNIX_EPOCH}};
-use serde::{Serialize, Deserialize};
-use serde_json::Result;
+use clap::{Args, Parser, Subcommand};
 
-#[derive(Serialize, Deserialize)]
-struct Branch {
-    parent_name: String,
-    created_at: u64
+#[derive(Parser)]
+#[command(name = "SuperDuperBrancher")]
+#[command(version = "1.0")]
+#[command(about = "Does awesome things", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
 }
 
-#[derive(Serialize, Deserialize)]
-struct State {
-    branches: HashMap<String, Branch>
+#[derive(Subcommand)]
+enum Commands {
+    Init,
+    Status,
+    HookPostCheckout(HookPostCheckoutArgs),
+    HookPostMerge,
 }
 
-fn read_state() -> Result<State> {
-    let state_file = match fs::read_to_string(".git/sdb-state.json") {
-        Ok(file_string) => file_string,
-        Err(error) => {
-            println!("No state file for sdb: {}", error);
-            return Ok(State {
-                branches: HashMap::new()
-            });
-        }
-    };
-    serde_json::from_str(&state_file)
+#[derive(Args)]
+struct HookPostCheckoutArgs {
+    ref_prev_head: String,
+    ref_new_head: String,
+    /// 0 for file checkout, 1 for branch checkout
+    is_branch_checkout: i32,
 }
 
-fn write_state(state: &State) {
-    let state_string = serde_json::to_string_pretty(state)
-        .expect("Error converting in-memory state to pretty string");
-    fs::write(".git/sdb-state.json", state_string)
-        .expect("Error writing in-memory state to file")
+fn init() {
+    println!("You invoked the init command!");
+}
+
+fn status() {
+    println!("You invoked the status command!");
+}
+
+fn hook_post_checkout(prev: &str, new: &str, flag: &i32) {
+    println!("hook post checkout {} {} {}", prev, new, flag);
+}
+
+fn hook_post_merge() {
+    println!("You invoked the hook_post_merge command!");
 }
 
 fn main() {
-    let mut state = read_state()
-        .expect("Error reading state");
-    let output = Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .expect("Failed to execute process");
-    let output_string: String = String::from_utf8(output.stdout)
-        .expect("Error getting string from output");
+    let cli = Cli::parse();
 
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)
-        .expect("Clock before epoch");
-        
-
-    let current_branch = Branch {
-        created_at: now.as_secs(),
-        parent_name: String::from("")
-    };
-
-    state.branches.insert(String::from(output_string.trim()), current_branch);
-    write_state(&state);
+    match &cli.command {
+        Commands::Init => init(),
+        Commands::Status => status(),
+        Commands::HookPostCheckout(HookPostCheckoutArgs {
+            ref_prev_head,
+            ref_new_head,
+            is_branch_checkout,
+        }) => {
+            hook_post_checkout(ref_prev_head, ref_new_head, is_branch_checkout);
+        }
+        Commands::HookPostMerge => {
+            hook_post_merge();
+        }
+    }
 }
