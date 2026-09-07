@@ -208,7 +208,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
             .parse()
             .expect("Could not convert reflog to timestamp");
 
-        if last_reflog_digits < state.installed_at {
+        if last_reflog_digits <= state.installed_at {
             return;
         }
     } else {
