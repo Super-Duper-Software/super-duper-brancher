@@ -112,11 +112,64 @@ fn init() {
     write_state(&state);
 }
 
+fn is_ancestor(child: &str, ancestor: &str) -> bool {
+    let (_, code) = run_git(["merge-base", "--is-ancestor", child, ancestor]);
+    code == Some(0)
+}
+
 #[derive(Tabled)]
 struct StatusTable {
     branch: String,
+    target: String,
     parent: String,
     is_merged: String,
+}
+
+fn get_target(branch_name: &str, state: &State) -> String {
+    let branch = state
+        .branches
+        .get(branch_name)
+        .expect("could not get branch in state");
+    let mut ancestor_names: Vec<String> = Vec::new();
+    let mut current_parent_name = &branch.parent_name;
+    let mut current_parent = state.branches.get(&branch.parent_name);
+
+    while current_parent.is_some() {
+        match current_parent {
+            Some(b) => {
+                ancestor_names.push(String::from(current_parent_name));
+                current_parent_name = &b.parent_name;
+                current_parent = state.branches.get(&b.parent_name);
+            }
+            None => break,
+        }
+    }
+    ancestor_names.push(String::from(current_parent_name));
+
+    for (index, ancestor) in ancestor_names.iter().enumerate() {
+        let mut merged_out = false;
+        let ancestor_branch = state.branches.get(ancestor);
+        match ancestor_branch {
+            Some(ancestor_branch) => {
+                let (tip, _) = run_git(["rev-parse", ancestor]);
+                if tip.trim() == ancestor_branch.fork_point {
+                    return String::from(ancestor);
+                }
+                for later in ancestor_names[index + 1..].iter() {
+                    if is_ancestor(ancestor, later) {
+                        merged_out = true;
+                        break;
+                    }
+                }
+                if !merged_out {
+                    return String::from(ancestor);
+                }
+            }
+            None => return String::from(ancestor),
+        }
+    }
+
+    return String::from(ancestor_names.last().expect("no elements found"));
 }
 
 fn status() {
@@ -127,19 +180,22 @@ fn status() {
         return;
     }
 
-    let mut branches_vec: Vec<(String, Branch)> = state.branches.into_iter().collect();
-    branches_vec.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut branches_vec: Vec<(&String, &Branch)> = state.branches.iter().collect();
+    branches_vec.sort_by(|a, b| b.1.created_at.cmp(&a.1.created_at));
 
     let mut branches_table: Vec<StatusTable> = Vec::new();
 
     for (key, value) in branches_vec {
         let is_merged = is_merged(&key, value.parent_name.as_str(), value.fork_point.as_str());
         let merged_label = is_merged.label();
-        let parent_name = value.parent_name;
+        let parent_name = value.parent_name.clone();
+        let target = get_target(&key, &state);
+
         branches_table.push(StatusTable {
-            branch: key,
+            branch: key.to_string(),
             parent: parent_name,
             is_merged: String::from(merged_label),
+            target,
         });
     }
 
