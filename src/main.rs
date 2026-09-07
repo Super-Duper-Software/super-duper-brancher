@@ -117,7 +117,9 @@ fn status() {
         let is_merged = is_merged(key, value.parent_name.as_str(), value.fork_point.as_str());
         println!(
             "is {} merged into {}: {:?}",
-            key, value.parent_name, is_merged
+            key,
+            value.parent_name,
+            is_merged.label()
         );
     }
 }
@@ -136,12 +138,22 @@ where
     (stdout, code)
 }
 
-#[derive(Debug)]
 enum MergedStatus {
     Merged,
     NotMerged,
     NoCommits,
     DunnoBro,
+}
+
+impl MergedStatus {
+    fn label(&self) -> &str {
+        match self {
+            MergedStatus::Merged => "merged",
+            MergedStatus::NotMerged => "not merged",
+            MergedStatus::NoCommits => "not merged, no commits",
+            MergedStatus::DunnoBro => "gone/unsure",
+        }
+    }
 }
 
 fn is_merged(branch: &str, parent: &str, fork_point: &str) -> MergedStatus {
