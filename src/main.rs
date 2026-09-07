@@ -5,6 +5,7 @@ use serde_json::map::IntoIter;
 use std::env;
 use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
+use std::process::Output;
 use std::{
     collections::HashMap,
     fs,
@@ -122,10 +123,17 @@ fn init() {
 }
 
 fn status() {
-    println!("You invoked the status command!");
+    let state = read_state().expect("Error reading state");
+    for (key, value) in &state.branches {
+        let is_merged = is_merged(key, value.parent_name.as_str());
+        println!(
+            "is {} merged into {}: {:?}",
+            key, value.parent_name, is_merged
+        );
+    }
 }
 
-fn run_git<I, S>(commands: I) -> String
+fn run_git<I, S>(commands: I) -> (String, Option<i32>)
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -134,7 +142,30 @@ where
         .args(commands)
         .output()
         .expect("Failed to run git command");
-    String::from_utf8(output.stdout).expect("Error getting string from git output")
+    let stdout = String::from_utf8(output.stdout).expect("Error getting string from git output");
+    let code = output.status.code();
+    (stdout, code)
+}
+
+#[derive(Debug)]
+enum MergedStatus {
+    Merged,
+    NotMerged,
+    DunnoBro,
+}
+
+fn is_merged(branch: &str, parent: &str) -> MergedStatus {
+    let (_, status) = run_git(["merge-base", "--is-ancestor", branch, parent]);
+
+    match status {
+        Some(0) => MergedStatus::Merged,
+        Some(1) => MergedStatus::NotMerged,
+        Some(other) => {
+            eprintln!("git exited {other}");
+            MergedStatus::DunnoBro
+        }
+        None => MergedStatus::DunnoBro,
+    }
 }
 
 fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
@@ -142,7 +173,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
         return;
     }
 
-    let current_branch_name_string = run_git(["rev-parse", "--abbrev-ref", "HEAD"]);
+    let (current_branch_name_string, _) = run_git(["rev-parse", "--abbrev-ref", "HEAD"]);
 
     let mut state = read_state().expect("Error reading state");
     if state
@@ -152,7 +183,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
         return;
     }
 
-    let reflog_time_output: String = run_git([
+    let (reflog_time_output, _) = run_git([
         "log",
         "-g",
         "--format=%gd",
@@ -180,7 +211,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
         panic!("Could not parse last reflog time")
     }
 
-    let previous_branch_name_string = run_git(["rev-parse", "--abbrev-ref", "@{-1}"]);
+    let (previous_branch_name_string, _) = run_git(["rev-parse", "--abbrev-ref", "@{-1}"]);
 
     if previous_branch_name_string.trim().is_empty() {
         return;
