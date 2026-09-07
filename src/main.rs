@@ -124,7 +124,10 @@ fn hook_post_checkout(prev: &str, new: &str, is_branch_checkout: &i32) {
         String::from_utf8(current_branch_name.stdout).expect("Error getting string from output");
 
     let mut state = read_state().expect("Error reading state");
-    if state.branches.contains_key(&current_branch_name_string) {
+    if state
+        .branches
+        .contains_key(current_branch_name_string.trim())
+    {
         return;
     }
 
