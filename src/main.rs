@@ -119,7 +119,10 @@ fn status() {
         return;
     }
 
-    for (key, value) in &state.branches {
+    let mut branches_vec: Vec<(String, Branch)> = state.branches.into_iter().collect();
+    branches_vec.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (key, value) in &branches_vec {
         let is_merged = is_merged(key, value.parent_name.as_str(), value.fork_point.as_str());
         println!(
             "is {} merged into {}: {:?}",
