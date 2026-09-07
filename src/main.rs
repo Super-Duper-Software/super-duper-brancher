@@ -164,10 +164,7 @@ fn is_merged(branch: &str, parent: &str, fork_point: &str) -> MergedStatus {
     match status {
         Some(0) => MergedStatus::Merged,
         Some(1) => MergedStatus::NotMerged,
-        Some(other) => {
-            eprintln!("git exited {other}");
-            MergedStatus::DunnoBro
-        }
+        Some(_) => MergedStatus::DunnoBro,
         None => MergedStatus::DunnoBro,
     }
 }
