@@ -122,7 +122,7 @@ struct StatusTable {
 fn status() {
     let state = read_state().expect("Error reading state");
 
-    if state.branches.len() == 0 {
+    if state.branches.is_empty() {
         println!("No branches yet!");
         return;
     }
@@ -137,7 +137,7 @@ fn status() {
         let merged_label = is_merged.label();
         let parent_name = value.parent_name;
         branches_table.push(StatusTable {
-            branch: String::from(key),
+            branch: key,
             parent: parent_name,
             is_merged: String::from(merged_label),
         });
