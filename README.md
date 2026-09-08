@@ -10,9 +10,20 @@ branches have already merged.
 
 ## Install
 
+From [crates.io](https://crates.io/crates/sdbr):
+
+```sh
+cargo install sdbr
+```
+
+Or from a local checkout:
+
 ```sh
 cargo install --path .
 ```
+
+Either way the `sdbr` binary lands in `~/.cargo/bin`, so make sure that's on
+your `PATH`.
 
 ## Usage
 
