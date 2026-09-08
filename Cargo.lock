@@ -147,7 +147,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sdb"
+name = "sdbr"
 version = "0.1.0"
 dependencies = [
  "clap",
