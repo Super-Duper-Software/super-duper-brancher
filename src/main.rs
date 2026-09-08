@@ -10,7 +10,7 @@ fn main() {
     let cli = cli::create_cli();
 
     match &cli.command {
-        cli::Commands::Init => scripts::init(),
+        cli::Commands::Init(args) => scripts::init(args.force),
         cli::Commands::Status => status::status(),
         cli::Commands::HookPostCheckout(cli::HookPostCheckoutArgs {
             ref_prev_head,

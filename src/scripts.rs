@@ -17,18 +17,36 @@ fn get_script(subcommand: &str) -> String {
     format!("#!/bin/sh\nexec {exe_path} {subcommand} \"$@\"\n")
 }
 
-pub fn write_and_set_perms(path: &str, script: &String) {
+fn write_and_set_perms(path: &str, script: &String) {
     fs::write(path, script).expect("could not write file");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755))
         .expect("Failed to set file permissions");
     println!("Wrote script to {}", path);
 }
 
-pub fn init() {
+pub fn init(force: bool) {
     let post_checkout_script = get_script("hook-post-checkout");
 
-    // TODO: check if exists, if does, need to surface error to user
-    // and maybe allow for a --force flag that will overwrite
+    if !force && fs::exists(".git/hooks/post-checkout").expect("Could not check if path exists") {
+        let exe_path = match env::current_exe() {
+            Ok(current_exe_path) => {
+                if let Some(path_str) = current_exe_path.to_str() {
+                    path_str.to_string()
+                } else {
+                    panic!("Could not parse current exe path")
+                }
+            }
+            Err(e) => panic!("failed to get current exe path: {e}"),
+        };
+
+        println!("Existing post-checkout hook detected. 2 options:");
+        println!("1. Run this command again with \"--force\" to overwrite the existing file");
+        println!(
+            "2. Paste this at the bottom of your existing .git/hooks/post-checkout script: \n"
+        );
+        println!("exec {exe_path} hook-post-checkout \"$@\"");
+        return;
+    }
     write_and_set_perms(".git/hooks/post-checkout", &post_checkout_script);
 
     let mut state = crate::state::read_state().expect("Could not read state");

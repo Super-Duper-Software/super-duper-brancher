@@ -11,9 +11,15 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    Init,
+    Init(InitArgs),
     Status,
     HookPostCheckout(HookPostCheckoutArgs),
+}
+
+#[derive(Args)]
+pub struct InitArgs {
+    #[arg(short, long)]
+    pub force: bool,
 }
 
 #[derive(Args)]
