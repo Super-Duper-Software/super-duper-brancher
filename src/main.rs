@@ -1,6 +1,7 @@
 mod cli;
 mod git;
 mod lineage;
+mod palette;
 mod scripts;
 mod state;
 mod status;

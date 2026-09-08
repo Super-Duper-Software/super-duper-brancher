@@ -1,17 +1,19 @@
 use crate::lineage::MergedStatus;
+use crate::palette::{self, Painter};
 use crate::state::State;
 use std::collections::{HashMap, HashSet};
-use std::io::IsTerminal;
-
-const RESET: &str = "\x1b[0m";
-const BOLD: &str = "\x1b[1m";
-const DIM: &str = "\x1b[2m";
-const RED: &str = "\x1b[31m";
 
 const TEE: &str = "\u{251c}\u{2500}\u{2500} "; // "├── "
 const ELBOW: &str = "\u{2514}\u{2500}\u{2500} "; // "└── "
 const PIPE: &str = "\u{2502}   "; // "│   "
 const GAP: &str = "    ";
+
+struct Ctx<'a> {
+    state: &'a State,
+    painter: Painter,
+    current: Option<String>,
+    lines: Vec<String>,
+}
 
 pub fn status() {
     let state = crate::state::read_state().expect("Error reading state");
@@ -21,7 +23,12 @@ pub fn status() {
         return;
     }
 
-    let color = std::io::stdout().is_terminal();
+    let mut ctx = Ctx {
+        state: &state,
+        painter: Painter::new(),
+        current: crate::git::current_branch(),
+        lines: Vec::new(),
+    };
 
     let mut children: HashMap<String, Vec<String>> = HashMap::new();
     for branch_name in state.branches.keys() {
@@ -54,8 +61,9 @@ pub fn status() {
 
     for root in &roots {
         visited.insert((*root).clone());
-        println!("{}", paint(root, BOLD, color));
-        print_kids(root, String::new(), &children, &state, &mut visited, color);
+        let line = ctx.root_line(root);
+        ctx.lines.push(line);
+        ctx.walk(root, String::new(), &children, &mut visited);
     }
 
     let mut orphans: Vec<&String> = state
@@ -65,76 +73,145 @@ pub fn status() {
         .collect();
     orphans.sort();
     for orphan in orphans {
-        if visited.contains(orphan) {
+        if !visited.insert(orphan.clone()) {
             continue;
         }
-        visited.insert(orphan.clone());
-        println!("{}", paint(orphan, BOLD, color));
-        print_kids(
-            orphan,
-            String::new(),
-            &children,
-            &state,
-            &mut visited,
-            color,
-        );
+        let line = ctx.branch_line(orphan);
+        ctx.lines.push(line);
+        ctx.walk(orphan, String::new(), &children, &mut visited);
     }
+
+    ctx.flush();
 }
 
-fn print_kids(
-    parent: &str,
-    prefix: String,
-    children: &HashMap<String, Vec<String>>,
-    state: &State,
-    visited: &mut HashSet<String>,
-    color: bool,
-) {
-    let Some(kids) = children.get(parent) else {
-        return;
-    };
+impl<'a> Ctx<'a> {
+    fn walk(
+        &mut self,
+        parent: &str,
+        prefix: String,
+        children: &HashMap<String, Vec<String>>,
+        visited: &mut HashSet<String>,
+    ) {
+        let Some(kids) = children.get(parent) else {
+            return;
+        };
 
-    for (i, kid) in kids.iter().enumerate() {
-        let is_last = i == kids.len() - 1;
-        let connector = paint(if is_last { ELBOW } else { TEE }, DIM, color);
+        for (i, kid) in kids.iter().enumerate() {
+            let is_last = i == kids.len() - 1;
+            let connector = self
+                .painter
+                .fg(if is_last { ELBOW } else { TEE }, palette::FAINT);
 
-        if !visited.insert(kid.clone()) {
-            println!(
-                "{prefix}{connector}{} {}",
-                kid,
-                paint("(cycle)", RED, color)
+            if !visited.insert(kid.clone()) {
+                let cycle = self.painter.fg("(cycle)", palette::ORANGE);
+                self.lines.push(format!("{prefix}{connector}{kid} {cycle}"));
+                continue;
+            }
+
+            let body = self.branch_line(kid);
+            self.lines.push(format!("{prefix}{connector}{body}"));
+
+            let child_prefix = format!(
+                "{prefix}{}",
+                self.painter
+                    .fg(if is_last { GAP } else { PIPE }, palette::FAINT)
             );
-            continue;
+            self.walk(kid, child_prefix, children, visited);
+        }
+    }
+
+    fn root_line(&self, name: &str) -> String {
+        let is_current = self.current.as_deref() == Some(name);
+        let name_color = if is_current {
+            palette::TEAL
+        } else {
+            palette::TEXT
+        };
+        let dot = self.painter.fg(
+            "\u{25c9}",
+            if is_current {
+                palette::TEAL
+            } else {
+                palette::MUTED
+            },
+        );
+        let painted = self.painter.bold(&self.painter.fg(name, name_color));
+        let suffix = self.painter.fg(" (trunk)", palette::FAINT);
+        format!("{dot} {painted}{suffix}")
+    }
+
+    fn branch_line(&self, name: &str) -> String {
+        let is_current = self.current.as_deref() == Some(name);
+        let branch = self.state.branches.get(name);
+
+        let status =
+            branch.map(|b| crate::lineage::is_merged(name, b.parent_name(), b.fork_point()));
+
+        let dot_color = if is_current {
+            palette::TEAL
+        } else {
+            match &status {
+                Some(MergedStatus::Merged) => palette::FAINT,
+                Some(MergedStatus::NotMerged) => palette::AMBER,
+                Some(MergedStatus::NoCommits) => palette::MUTED,
+                Some(MergedStatus::DunnoBro) | None => palette::ORANGE,
+            }
+        };
+
+        let name_color = if is_current {
+            palette::TEAL
+        } else {
+            match &status {
+                Some(MergedStatus::Merged) => palette::FAINT,
+                Some(MergedStatus::NoCommits) => palette::MUTED,
+                _ => palette::TEXT,
+            }
+        };
+        let mut out = format!(
+            "{} {}",
+            self.painter.fg("\u{25cf}", dot_color),
+            self.painter.fg(name, name_color)
+        );
+
+        if let Some(b) = branch {
+            out.push_str("  ");
+            out.push_str(&self.badge(b.parent_name()));
         }
 
+        if let Some(st) = &status {
+            out.push_str("  ");
+            out.push_str(&self.status_cell(st));
+        }
+
+        out
+    }
+
+    fn badge(&self, parent: &str) -> String {
+        let label = format!("\u{2190} {parent}");
+        self.painter.badge(&label, palette::MUTED)
+    }
+
+    fn status_cell(&self, st: &MergedStatus) -> String {
+        let (glyph, word, color) = match st {
+            MergedStatus::Merged => ("\u{2713}", "merged", palette::FAINT),
+            MergedStatus::NotMerged => ("\u{25c6}", "not merged", palette::AMBER),
+            MergedStatus::NoCommits => ("\u{2205}", "no commits", palette::MUTED),
+            MergedStatus::DunnoBro => ("\u{26a0}\u{fe0e}", "gone / unsure", palette::ORANGE),
+        };
+        self.painter.fg(&format!("{glyph} {word}"), color)
+    }
+
+    fn flush(&self) {
+        let title = "Branch Tree";
+
+        println!("{}", self.painter.bold(title));
         println!(
-            "{prefix}{connector}{}",
-            paint(kid, status_color(kid, state), color)
+            "{}",
+            self.painter
+                .fg(&"\u{2500}".repeat(title.chars().count()), palette::FAINT)
         );
-
-        let branch_prefix = format!(
-            "{prefix}{}",
-            paint(if is_last { GAP } else { PIPE }, DIM, color)
-        );
-        print_kids(kid, branch_prefix, children, state, visited, color);
-    }
-}
-
-fn status_color(name: &str, state: &State) -> &'static str {
-    let Some(b) = state.branches.get(name) else {
-        return "";
-    };
-    match crate::lineage::is_merged(name, b.parent_name(), b.fork_point()) {
-        MergedStatus::Merged => DIM,
-        MergedStatus::NotMerged => "",
-        MergedStatus::NoCommits => DIM,
-        MergedStatus::DunnoBro => RED,
-    }
-}
-
-fn paint(text: &str, code: &str, color: bool) -> String {
-    if color && !code.is_empty() {
-        format!("{code}{text}{RESET}")
-    } else {
-        text.to_string()
+        for line in &self.lines {
+            println!("{line}");
+        }
     }
 }

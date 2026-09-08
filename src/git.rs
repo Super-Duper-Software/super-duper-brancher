@@ -19,3 +19,16 @@ pub fn is_ancestor(child: &str, ancestor: &str) -> bool {
     let (_, code) = run_git(["merge-base", "--is-ancestor", child, ancestor]);
     code == Some(0)
 }
+
+pub fn current_branch() -> Option<String> {
+    let (out, code) = run_git(["branch", "--show-current"]);
+    if code != Some(0) {
+        return None;
+    }
+    let name = out.trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
