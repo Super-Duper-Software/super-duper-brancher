@@ -1,10 +1,10 @@
 use clap::{Args, Parser, Subcommand};
 use std::env;
-use std::ffi::OsStr;
+use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::{fs, process::Command};
 use tabled::{Table, Tabled};
 
+mod git;
 mod state;
 mod time;
 
@@ -67,11 +67,6 @@ fn init() {
     state::write_state(&state);
 }
 
-fn is_ancestor(child: &str, ancestor: &str) -> bool {
-    let (_, code) = run_git(["merge-base", "--is-ancestor", child, ancestor]);
-    code == Some(0)
-}
-
 #[derive(Tabled)]
 struct StatusTable {
     branch: String,
@@ -106,12 +101,12 @@ fn get_target(branch_name: &str, state: &state::State) -> String {
         let ancestor_branch = state.branches.get(ancestor);
         match ancestor_branch {
             Some(ancestor_branch) => {
-                let (tip, _) = run_git(["rev-parse", ancestor]);
+                let (tip, _) = git::run_git(["rev-parse", ancestor]);
                 if tip.trim() == ancestor_branch.fork_point() {
                     return String::from(ancestor);
                 }
                 for later in ancestor_names[index + 1..].iter() {
-                    if is_ancestor(ancestor, later) {
+                    if git::is_ancestor(ancestor, later) {
                         merged_out = true;
                         break;
                     }
@@ -157,20 +152,6 @@ fn status() {
     println!("{}", table);
 }
 
-fn run_git<I, S>(commands: I) -> (String, Option<i32>)
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let output = Command::new("git")
-        .args(commands)
-        .output()
-        .expect("Failed to run git command");
-    let stdout = String::from_utf8(output.stdout).expect("Error getting string from git output");
-    let code = output.status.code();
-    (stdout, code)
-}
-
 enum MergedStatus {
     Merged,
     NotMerged,
@@ -190,11 +171,11 @@ impl MergedStatus {
 }
 
 fn is_merged(branch: &str, parent: &str, fork_point: &str) -> MergedStatus {
-    let (tip, _) = run_git(["rev-parse", branch]);
+    let (tip, _) = git::run_git(["rev-parse", branch]);
     if tip.trim() == fork_point {
         return MergedStatus::NoCommits;
     }
-    let (_, status) = run_git(["merge-base", "--is-ancestor", branch, parent]);
+    let (_, status) = git::run_git(["merge-base", "--is-ancestor", branch, parent]);
 
     match status {
         Some(0) => MergedStatus::Merged,
@@ -209,7 +190,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
         return;
     }
 
-    let (current_branch_name_string, _) = run_git(["rev-parse", "--abbrev-ref", "HEAD"]);
+    let (current_branch_name_string, _) = git::run_git(["rev-parse", "--abbrev-ref", "HEAD"]);
 
     let mut state = state::read_state().expect("Error reading state");
     if state
@@ -219,7 +200,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
         return;
     }
 
-    let (reflog_time_output, _) = run_git([
+    let (reflog_time_output, _) = git::run_git([
         "log",
         "-g",
         "--format=%gd",
@@ -247,13 +228,13 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
         panic!("Could not parse last reflog time")
     }
 
-    let (previous_branch_name_string, _) = run_git(["rev-parse", "--abbrev-ref", "@{-1}"]);
+    let (previous_branch_name_string, _) = git::run_git(["rev-parse", "--abbrev-ref", "@{-1}"]);
 
     if previous_branch_name_string.trim().is_empty() {
         return;
     }
 
-    let (fork_point, _) = run_git(["rev-parse", "HEAD"]);
+    let (fork_point, _) = git::run_git(["rev-parse", "HEAD"]);
 
     let current_branch = state::Branch::new(previous_branch_name_string, fork_point);
 
