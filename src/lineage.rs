@@ -60,7 +60,7 @@ pub fn get_target(branch_name: &str, state: &crate::state::State) -> String {
         }
     }
 
-    return String::from(ancestor_names.last().expect("no elements found"));
+    String::from(ancestor_names.last().expect("no elements found"))
 }
 
 pub fn is_merged(branch: &str, parent: &str, fork_point: &str) -> MergedStatus {

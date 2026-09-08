@@ -17,14 +17,14 @@ pub fn status() {
     }
 
     let mut branches_vec: Vec<(&String, &crate::state::Branch)> = state.branches.iter().collect();
-    branches_vec.sort_by(|a, b| b.1.created_at().cmp(&a.1.created_at()));
+    branches_vec.sort_by_key(|b| std::cmp::Reverse(b.1.created_at()));
 
     let mut branches_table: Vec<StatusTable> = Vec::new();
 
     for (key, value) in branches_vec {
-        let is_merged = crate::lineage::is_merged(&key, value.parent_name(), value.fork_point());
+        let is_merged = crate::lineage::is_merged(key, value.parent_name(), value.fork_point());
         let merged_label = is_merged.label();
-        let target = crate::lineage::get_target(&key, &state);
+        let target = crate::lineage::get_target(key, &state);
 
         branches_table.push(StatusTable {
             branch: key.to_string(),
