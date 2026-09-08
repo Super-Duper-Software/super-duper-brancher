@@ -5,6 +5,7 @@ mod scripts;
 mod state;
 mod status;
 mod time;
+mod viz;
 
 fn main() {
     let cli = cli::create_cli();
@@ -12,6 +13,7 @@ fn main() {
     match &cli.command {
         cli::Commands::Init => scripts::init(),
         cli::Commands::Status => status::status(),
+        cli::Commands::Viz => viz::viz(),
         cli::Commands::HookPostCheckout(cli::HookPostCheckoutArgs {
             ref_prev_head,
             ref_new_head,
