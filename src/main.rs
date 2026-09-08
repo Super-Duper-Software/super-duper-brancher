@@ -1,50 +1,15 @@
 use clap::{Args, Parser, Subcommand};
-use serde::{Deserialize, Serialize};
-use serde_json::Result;
 use std::env;
 use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
 use std::{
-    collections::HashMap,
     fs,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tabled::{Table, Tabled};
 
-// Branch state
-
-#[derive(Serialize, Deserialize)]
-struct Branch {
-    parent_name: String,
-    fork_point: String,
-    created_at: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-struct State {
-    branches: HashMap<String, Branch>,
-    installed_at: u64,
-}
-
-fn read_state() -> Result<State> {
-    let state_file = match fs::read_to_string(".git/sdb-state.json") {
-        Ok(file_string) => file_string,
-        Err(_error) => {
-            return Ok(State {
-                branches: HashMap::new(),
-                installed_at: 0,
-            });
-        }
-    };
-    serde_json::from_str(&state_file)
-}
-
-fn write_state(state: &State) {
-    let state_string = serde_json::to_string_pretty(state)
-        .expect("Error converting in-memory state to pretty string");
-    fs::write(".git/sdb-state.json", state_string).expect("Error writing in-memory state to file")
-}
+mod state;
 
 // CLI
 #[derive(Parser)]
@@ -107,9 +72,9 @@ fn init() {
     // and maybe allow for a --force flag that will overwrite
     write_and_set_perms(".git/hooks/post-checkout", &post_checkout_script);
 
-    let mut state = read_state().expect("Could not read state");
+    let mut state = state::read_state().expect("Could not read state");
     state.installed_at = get_epoch_secs();
-    write_state(&state);
+    state::write_state(&state);
 }
 
 fn is_ancestor(child: &str, ancestor: &str) -> bool {
@@ -125,7 +90,7 @@ struct StatusTable {
     is_merged: String,
 }
 
-fn get_target(branch_name: &str, state: &State) -> String {
+fn get_target(branch_name: &str, state: &state::State) -> String {
     let branch = state
         .branches
         .get(branch_name)
@@ -173,14 +138,14 @@ fn get_target(branch_name: &str, state: &State) -> String {
 }
 
 fn status() {
-    let state = read_state().expect("Error reading state");
+    let state = state::read_state().expect("Error reading state");
 
     if state.branches.is_empty() {
         println!("No branches yet!");
         return;
     }
 
-    let mut branches_vec: Vec<(&String, &Branch)> = state.branches.iter().collect();
+    let mut branches_vec: Vec<(&String, &state::Branch)> = state.branches.iter().collect();
     branches_vec.sort_by(|a, b| b.1.created_at.cmp(&a.1.created_at));
 
     let mut branches_table: Vec<StatusTable> = Vec::new();
@@ -257,7 +222,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
 
     let (current_branch_name_string, _) = run_git(["rev-parse", "--abbrev-ref", "HEAD"]);
 
-    let mut state = read_state().expect("Error reading state");
+    let mut state = state::read_state().expect("Error reading state");
     if state
         .branches
         .contains_key(current_branch_name_string.trim())
@@ -303,7 +268,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
 
     let (fork_point, _) = run_git(["rev-parse", "HEAD"]);
 
-    let current_branch = Branch {
+    let current_branch = state::Branch {
         created_at: now,
         fork_point: String::from(fork_point.trim()),
         parent_name: String::from(previous_branch_name_string.trim()),
@@ -314,7 +279,7 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
         current_branch,
     );
 
-    write_state(&state);
+    state::write_state(&state);
 }
 
 fn main() {
