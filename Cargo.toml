@@ -1,7 +1,7 @@
 [package]
 name = "sdbr"
 path = "src/main.rs"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "A small CLI that tracks where your git branches forked from and where they merge back to."
 license = "MIT"
