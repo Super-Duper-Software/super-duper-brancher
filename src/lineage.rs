@@ -5,17 +5,6 @@ pub enum MergedStatus {
     DunnoBro,
 }
 
-impl MergedStatus {
-    pub fn label(&self) -> &str {
-        match self {
-            MergedStatus::Merged => "merged",
-            MergedStatus::NotMerged => "not merged",
-            MergedStatus::NoCommits => "not merged, no commits",
-            MergedStatus::DunnoBro => "gone/unsure",
-        }
-    }
-}
-
 pub fn get_target(branch_name: &str, state: &crate::state::State) -> String {
     let branch = state
         .branches

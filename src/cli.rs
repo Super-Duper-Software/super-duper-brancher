@@ -13,7 +13,6 @@ pub struct Cli {
 pub enum Commands {
     Init,
     Status,
-    Viz,
     HookPostCheckout(HookPostCheckoutArgs),
 }
 
