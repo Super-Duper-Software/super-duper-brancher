@@ -1,5 +1,4 @@
 use clap::{Args, Parser, Subcommand};
-use std::env;
 
 #[derive(Parser)]
 #[command(name = "Super Duper Brancher")]
@@ -27,19 +26,4 @@ pub struct HookPostCheckoutArgs {
 
 pub fn create_cli() -> Cli {
     Cli::parse()
-}
-
-pub fn get_script(subcommand: &str) -> String {
-    let exe_path = match env::current_exe() {
-        Ok(current_exe_path) => {
-            if let Some(path_str) = current_exe_path.to_str() {
-                path_str.to_string()
-            } else {
-                panic!("Could not parse current exe path")
-            }
-        }
-        Err(e) => panic!("failed to get current exe path: {e}"),
-    };
-
-    format!("#!/bin/sh\nexec {exe_path} {subcommand} \"$@\"\n")
 }

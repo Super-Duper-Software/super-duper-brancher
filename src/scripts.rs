@@ -1,5 +1,21 @@
+use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+
+fn get_script(subcommand: &str) -> String {
+    let exe_path = match env::current_exe() {
+        Ok(current_exe_path) => {
+            if let Some(path_str) = current_exe_path.to_str() {
+                path_str.to_string()
+            } else {
+                panic!("Could not parse current exe path")
+            }
+        }
+        Err(e) => panic!("failed to get current exe path: {e}"),
+    };
+
+    format!("#!/bin/sh\nexec {exe_path} {subcommand} \"$@\"\n")
+}
 
 pub fn write_and_set_perms(path: &str, script: &String) {
     fs::write(path, script).expect("could not write file");
@@ -9,7 +25,7 @@ pub fn write_and_set_perms(path: &str, script: &String) {
 }
 
 pub fn init() {
-    let post_checkout_script = crate::cli::get_script("hook-post-checkout");
+    let post_checkout_script = get_script("hook-post-checkout");
 
     // TODO: check if exists, if does, need to surface error to user
     // and maybe allow for a --force flag that will overwrite
