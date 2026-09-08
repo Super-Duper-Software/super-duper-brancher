@@ -5,8 +5,39 @@ use std::os::unix::fs::PermissionsExt;
 use tabled::{Table, Tabled};
 
 mod git;
+mod lineage;
 mod state;
 mod time;
+
+fn status() {
+    let state = crate::state::read_state().expect("Error reading state");
+
+    if state.branches.is_empty() {
+        println!("No branches yet!");
+        return;
+    }
+
+    let mut branches_vec: Vec<(&String, &crate::state::Branch)> = state.branches.iter().collect();
+    branches_vec.sort_by(|a, b| b.1.created_at().cmp(&a.1.created_at()));
+
+    let mut branches_table: Vec<StatusTable> = Vec::new();
+
+    for (key, value) in branches_vec {
+        let is_merged = lineage::is_merged(&key, value.parent_name(), value.fork_point());
+        let merged_label = is_merged.label();
+        let target = lineage::get_target(&key, &state);
+
+        branches_table.push(StatusTable {
+            branch: key.to_string(),
+            parent: String::from(value.parent_name()),
+            is_merged: String::from(merged_label),
+            target,
+        });
+    }
+
+    let table = Table::new(branches_table);
+    println!("{}", table);
+}
 
 // CLI
 #[derive(Parser)]
@@ -73,116 +104,6 @@ struct StatusTable {
     target: String,
     parent: String,
     is_merged: String,
-}
-
-fn get_target(branch_name: &str, state: &state::State) -> String {
-    let branch = state
-        .branches
-        .get(branch_name)
-        .expect("could not get branch in state");
-    let mut ancestor_names: Vec<String> = Vec::new();
-    let mut current_parent_name = branch.parent_name();
-    let mut current_parent = state.branches.get(branch.parent_name());
-
-    while current_parent.is_some() {
-        match current_parent {
-            Some(b) => {
-                ancestor_names.push(String::from(current_parent_name));
-                current_parent_name = b.parent_name();
-                current_parent = state.branches.get(b.parent_name());
-            }
-            None => break,
-        }
-    }
-    ancestor_names.push(String::from(current_parent_name));
-
-    for (index, ancestor) in ancestor_names.iter().enumerate() {
-        let mut merged_out = false;
-        let ancestor_branch = state.branches.get(ancestor);
-        match ancestor_branch {
-            Some(ancestor_branch) => {
-                let (tip, _) = git::run_git(["rev-parse", ancestor]);
-                if tip.trim() == ancestor_branch.fork_point() {
-                    return String::from(ancestor);
-                }
-                for later in ancestor_names[index + 1..].iter() {
-                    if git::is_ancestor(ancestor, later) {
-                        merged_out = true;
-                        break;
-                    }
-                }
-                if !merged_out {
-                    return String::from(ancestor);
-                }
-            }
-            None => return String::from(ancestor),
-        }
-    }
-
-    return String::from(ancestor_names.last().expect("no elements found"));
-}
-
-fn status() {
-    let state = state::read_state().expect("Error reading state");
-
-    if state.branches.is_empty() {
-        println!("No branches yet!");
-        return;
-    }
-
-    let mut branches_vec: Vec<(&String, &state::Branch)> = state.branches.iter().collect();
-    branches_vec.sort_by(|a, b| b.1.created_at().cmp(&a.1.created_at()));
-
-    let mut branches_table: Vec<StatusTable> = Vec::new();
-
-    for (key, value) in branches_vec {
-        let is_merged = is_merged(&key, value.parent_name(), value.fork_point());
-        let merged_label = is_merged.label();
-        let target = get_target(&key, &state);
-
-        branches_table.push(StatusTable {
-            branch: key.to_string(),
-            parent: String::from(value.parent_name()),
-            is_merged: String::from(merged_label),
-            target,
-        });
-    }
-
-    let table = Table::new(branches_table);
-    println!("{}", table);
-}
-
-enum MergedStatus {
-    Merged,
-    NotMerged,
-    NoCommits,
-    DunnoBro,
-}
-
-impl MergedStatus {
-    fn label(&self) -> &str {
-        match self {
-            MergedStatus::Merged => "merged",
-            MergedStatus::NotMerged => "not merged",
-            MergedStatus::NoCommits => "not merged, no commits",
-            MergedStatus::DunnoBro => "gone/unsure",
-        }
-    }
-}
-
-fn is_merged(branch: &str, parent: &str, fork_point: &str) -> MergedStatus {
-    let (tip, _) = git::run_git(["rev-parse", branch]);
-    if tip.trim() == fork_point {
-        return MergedStatus::NoCommits;
-    }
-    let (_, status) = git::run_git(["merge-base", "--is-ancestor", branch, parent]);
-
-    match status {
-        Some(0) => MergedStatus::Merged,
-        Some(1) => MergedStatus::NotMerged,
-        Some(_) => MergedStatus::DunnoBro,
-        None => MergedStatus::DunnoBro,
-    }
 }
 
 fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
