@@ -1,3 +1,25 @@
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+
+pub fn write_and_set_perms(path: &str, script: &String) {
+    fs::write(path, script).expect("could not write file");
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+        .expect("Failed to set file permissions");
+    println!("Wrote script to {}", path);
+}
+
+pub fn init() {
+    let post_checkout_script = crate::cli::get_script("hook-post-checkout");
+
+    // TODO: check if exists, if does, need to surface error to user
+    // and maybe allow for a --force flag that will overwrite
+    write_and_set_perms(".git/hooks/post-checkout", &post_checkout_script);
+
+    let mut state = crate::state::read_state().expect("Could not read state");
+    state.installed_at = crate::time::get_epoch_secs();
+    crate::state::write_state(&state);
+}
+
 pub fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
     if *is_branch_checkout == 0 {
         return;
