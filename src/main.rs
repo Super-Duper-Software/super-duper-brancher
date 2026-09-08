@@ -2,14 +2,11 @@ use clap::{Args, Parser, Subcommand};
 use std::env;
 use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
-use std::{
-    fs,
-    process::Command,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{fs, process::Command};
 use tabled::{Table, Tabled};
 
 mod state;
+mod time;
 
 // CLI
 #[derive(Parser)]
@@ -58,13 +55,6 @@ fn write_and_set_perms(path: &str, script: &String) {
     println!("Wrote script to {}", path);
 }
 
-fn get_epoch_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Clock before epoch")
-        .as_secs()
-}
-
 fn init() {
     let post_checkout_script = get_script("hook-post-checkout");
 
@@ -73,7 +63,7 @@ fn init() {
     write_and_set_perms(".git/hooks/post-checkout", &post_checkout_script);
 
     let mut state = state::read_state().expect("Could not read state");
-    state.installed_at = get_epoch_secs();
+    state.installed_at = time::get_epoch_secs();
     state::write_state(&state);
 }
 
@@ -96,15 +86,15 @@ fn get_target(branch_name: &str, state: &state::State) -> String {
         .get(branch_name)
         .expect("could not get branch in state");
     let mut ancestor_names: Vec<String> = Vec::new();
-    let mut current_parent_name = &branch.parent_name;
-    let mut current_parent = state.branches.get(&branch.parent_name);
+    let mut current_parent_name = branch.parent_name();
+    let mut current_parent = state.branches.get(branch.parent_name());
 
     while current_parent.is_some() {
         match current_parent {
             Some(b) => {
                 ancestor_names.push(String::from(current_parent_name));
-                current_parent_name = &b.parent_name;
-                current_parent = state.branches.get(&b.parent_name);
+                current_parent_name = b.parent_name();
+                current_parent = state.branches.get(b.parent_name());
             }
             None => break,
         }
@@ -117,7 +107,7 @@ fn get_target(branch_name: &str, state: &state::State) -> String {
         match ancestor_branch {
             Some(ancestor_branch) => {
                 let (tip, _) = run_git(["rev-parse", ancestor]);
-                if tip.trim() == ancestor_branch.fork_point {
+                if tip.trim() == ancestor_branch.fork_point() {
                     return String::from(ancestor);
                 }
                 for later in ancestor_names[index + 1..].iter() {
@@ -146,19 +136,18 @@ fn status() {
     }
 
     let mut branches_vec: Vec<(&String, &state::Branch)> = state.branches.iter().collect();
-    branches_vec.sort_by(|a, b| b.1.created_at.cmp(&a.1.created_at));
+    branches_vec.sort_by(|a, b| b.1.created_at().cmp(&a.1.created_at()));
 
     let mut branches_table: Vec<StatusTable> = Vec::new();
 
     for (key, value) in branches_vec {
-        let is_merged = is_merged(&key, value.parent_name.as_str(), value.fork_point.as_str());
+        let is_merged = is_merged(&key, value.parent_name(), value.fork_point());
         let merged_label = is_merged.label();
-        let parent_name = value.parent_name.clone();
         let target = get_target(&key, &state);
 
         branches_table.push(StatusTable {
             branch: key.to_string(),
-            parent: parent_name,
+            parent: String::from(value.parent_name()),
             is_merged: String::from(merged_label),
             target,
         });
@@ -264,15 +253,9 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
         return;
     }
 
-    let now = get_epoch_secs();
-
     let (fork_point, _) = run_git(["rev-parse", "HEAD"]);
 
-    let current_branch = state::Branch {
-        created_at: now,
-        fork_point: String::from(fork_point.trim()),
-        parent_name: String::from(previous_branch_name_string.trim()),
-    };
+    let current_branch = state::Branch::new(previous_branch_name_string, fork_point);
 
     state.branches.insert(
         String::from(current_branch_name_string.trim()),
