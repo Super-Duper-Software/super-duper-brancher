@@ -1,42 +1,12 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use tabled::{Table, Tabled};
 
 mod cli;
 mod git;
 mod lineage;
 mod state;
+mod status;
 mod time;
-
-fn status() {
-    let state = crate::state::read_state().expect("Error reading state");
-
-    if state.branches.is_empty() {
-        println!("No branches yet!");
-        return;
-    }
-
-    let mut branches_vec: Vec<(&String, &crate::state::Branch)> = state.branches.iter().collect();
-    branches_vec.sort_by(|a, b| b.1.created_at().cmp(&a.1.created_at()));
-
-    let mut branches_table: Vec<StatusTable> = Vec::new();
-
-    for (key, value) in branches_vec {
-        let is_merged = lineage::is_merged(&key, value.parent_name(), value.fork_point());
-        let merged_label = is_merged.label();
-        let target = lineage::get_target(&key, &state);
-
-        branches_table.push(StatusTable {
-            branch: key.to_string(),
-            parent: String::from(value.parent_name()),
-            is_merged: String::from(merged_label),
-            target,
-        });
-    }
-
-    let table = Table::new(branches_table);
-    println!("{}", table);
-}
 
 fn write_and_set_perms(path: &str, script: &String) {
     fs::write(path, script).expect("could not write file");
@@ -55,14 +25,6 @@ fn init() {
     let mut state = state::read_state().expect("Could not read state");
     state.installed_at = time::get_epoch_secs();
     state::write_state(&state);
-}
-
-#[derive(Tabled)]
-struct StatusTable {
-    branch: String,
-    target: String,
-    parent: String,
-    is_merged: String,
 }
 
 fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
@@ -131,7 +93,7 @@ fn main() {
 
     match &cli.command {
         cli::Commands::Init => init(),
-        cli::Commands::Status => status(),
+        cli::Commands::Status => status::status(),
         cli::Commands::HookPostCheckout(cli::HookPostCheckoutArgs {
             ref_prev_head,
             ref_new_head,
