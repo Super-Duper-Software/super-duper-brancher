@@ -1,9 +1,8 @@
-use clap::{Args, Parser, Subcommand};
-use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use tabled::{Table, Tabled};
 
+mod cli;
 mod git;
 mod lineage;
 mod state;
@@ -39,46 +38,6 @@ fn status() {
     println!("{}", table);
 }
 
-// CLI
-#[derive(Parser)]
-#[command(name = "SuperDuperBrancher")]
-#[command(version = "1.0")]
-#[command(about = "Does awesome things", long_about = None)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    Init,
-    Status,
-    HookPostCheckout(HookPostCheckoutArgs),
-}
-
-#[derive(Args)]
-struct HookPostCheckoutArgs {
-    ref_prev_head: String,
-    ref_new_head: String,
-    /// 0 for file checkout, 1 for branch checkout
-    is_branch_checkout: i32,
-}
-
-fn get_script(subcommand: &str) -> String {
-    let exe_path = match env::current_exe() {
-        Ok(current_exe_path) => {
-            if let Some(path_str) = current_exe_path.to_str() {
-                path_str.to_string()
-            } else {
-                panic!("Could not parse current exe path")
-            }
-        }
-        Err(e) => panic!("failed to get current exe path: {e}"),
-    };
-
-    format!("#!/bin/sh\nexec {exe_path} {subcommand} \"$@\"\n")
-}
-
 fn write_and_set_perms(path: &str, script: &String) {
     fs::write(path, script).expect("could not write file");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755))
@@ -87,7 +46,7 @@ fn write_and_set_perms(path: &str, script: &String) {
 }
 
 fn init() {
-    let post_checkout_script = get_script("hook-post-checkout");
+    let post_checkout_script = cli::get_script("hook-post-checkout");
 
     // TODO: check if exists, if does, need to surface error to user
     // and maybe allow for a --force flag that will overwrite
@@ -168,12 +127,12 @@ fn hook_post_checkout(_prev: &str, _new: &str, is_branch_checkout: &i32) {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    let cli = cli::create_cli();
 
     match &cli.command {
-        Commands::Init => init(),
-        Commands::Status => status(),
-        Commands::HookPostCheckout(HookPostCheckoutArgs {
+        cli::Commands::Init => init(),
+        cli::Commands::Status => status(),
+        cli::Commands::HookPostCheckout(cli::HookPostCheckoutArgs {
             ref_prev_head,
             ref_new_head,
             is_branch_checkout,
