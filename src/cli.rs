@@ -2,7 +2,7 @@ use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "Super Duper Brancher")]
-#[command(version = "1.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Small cli to keep track of branch parents & merge targets", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
